@@ -12,6 +12,10 @@ module exe_stage(
     //to ms
     output                         es_to_ms_valid,
     output [`ES_TO_MS_BUS_WD -1:0] es_to_ms_bus  ,
+    // hazard info to ds
+    output                         es_valid_o    ,
+    output                         es_gr_we_o    ,
+    output [4:0]                   es_dest_o     ,
     // data sram interface
     output        data_sram_en   ,
     output [ 3:0] data_sram_wen  ,
@@ -53,7 +57,6 @@ wire [31:0] es_alu_src1   ;
 wire [31:0] es_alu_src2   ;
 wire [31:0] es_alu_result ;
 
-//assign es_res_from_mem = es_load_op;
 assign es_to_ms_bus = {es_res_from_mem,  //70:70
                        es_gr_we       ,  //69:69
                        es_dest        ,  //68:64
@@ -63,7 +66,7 @@ assign es_to_ms_bus = {es_res_from_mem,  //70:70
 
 assign es_ready_go    = 1'b1;
 assign es_allowin     = !es_valid || es_ready_go && ms_allowin;
-assign es_to_ms_valid =  es_valid && es_ready_go;
+assign es_to_ms_valid = es_valid && es_ready_go;
 always @(posedge clk) begin
     if (reset) begin
         es_valid <= 1'b0;
@@ -89,6 +92,10 @@ alu u_alu(
     .alu_src2   (es_alu_src2  ),
     .alu_result (es_alu_result)
     );
+
+assign es_valid_o = es_valid;
+assign es_gr_we_o = es_gr_we;
+assign es_dest_o  = es_dest;
 
 assign data_sram_en    = (es_res_from_mem || es_mem_we) && es_valid;
 assign data_sram_wen   = es_mem_we ? 4'hf : 4'h0;

@@ -15,7 +15,17 @@ module id_stage(
     //to fs
     output [`BR_BUS_WD       -1:0] br_bus        ,
     //to rf: for write back
-    input  [`WS_TO_RF_BUS_WD -1:0] ws_to_rf_bus
+    input  [`WS_TO_RF_BUS_WD -1:0] ws_to_rf_bus  ,
+    // hazard info from later stages
+    input                          es_valid_o    ,
+    input                          es_gr_we_o    ,
+    input  [4:0]                   es_dest_o     ,
+    input                          ms_valid_o    ,
+    input                          ms_gr_we_o    ,
+    input  [4:0]                   ms_dest_o     ,
+    input                          ws_valid_o    ,
+    input                          ws_gr_we_o    ,
+    input  [4:0]                   ws_dest_o
 );
 
 reg         ds_valid   ;
@@ -107,6 +117,16 @@ wire [31:0] rf_rdata2;
 
 wire        rj_eq_rd;
 
+wire        need_rs1;
+wire        need_rs2;
+wire        rs1_conflict_es;
+wire        rs1_conflict_ms;
+wire        rs1_conflict_ws;
+wire        rs2_conflict_es;
+wire        rs2_conflict_ms;
+wire        rs2_conflict_ws;
+wire        raw_conflict;
+
 assign br_bus       = {br_taken,br_target};
 
 assign ds_to_es_bus = {alu_op      ,  //149:138
@@ -122,7 +142,6 @@ assign ds_to_es_bus = {alu_op      ,  //149:138
                        ds_pc          //31 :0
                       };
 
-assign ds_ready_go    = 1'b1;
 assign ds_allowin     = !ds_valid || ds_ready_go && es_allowin;
 assign ds_to_es_valid = ds_valid && ds_ready_go;
 always @(posedge clk) begin
@@ -195,14 +214,12 @@ assign alu_op[ 9] = inst_srli_w;
 assign alu_op[10] = inst_srai_w;
 assign alu_op[11] = inst_lu12i_w;
 
-
 assign need_ui5   =  inst_slli_w | inst_srli_w | inst_srai_w;
 assign need_si12  =  inst_addi_w | inst_ld_w | inst_st_w;
 assign need_si16  =  inst_jirl | inst_beq | inst_bne;
 assign need_si20  =  inst_lu12i_w;
 assign need_si26  =  inst_b | inst_bl;
 assign src2_is_4  =  inst_jirl | inst_bl;
-
 
 assign ds_imm = src2_is_4 ? 32'h4 :
                 need_si20 ? {i20[19:0], 12'b0} :
@@ -226,8 +243,7 @@ assign src2_is_imm   = inst_slli_w |
                        inst_st_w   |
                        inst_lu12i_w|
                        inst_jirl   |
-                       inst_bl     ;
-
+                       inst_bl;
 
 assign res_from_mem  = inst_ld_w;
 assign dst_is_r1     = inst_bl;
@@ -236,7 +252,7 @@ assign mem_we        = inst_st_w;
 assign dest          = dst_is_r1 ? 5'd1 : rd;
 
 assign rf_raddr1 = rj;
-assign rf_raddr2 = src_reg_is_rd ? rd :rk;
+assign rf_raddr2 = src_reg_is_rd ? rd : rk;
 regfile u_regfile(
     .clk    (clk      ),
     .raddr1 (rf_raddr1),
@@ -248,6 +264,31 @@ regfile u_regfile(
     .wdata  (rf_wdata )
     );
 
+assign need_rs1 = ~(inst_b | inst_bl | inst_lu12i_w);
+assign need_rs2 = inst_add_w  |
+                  inst_sub_w  |
+                  inst_slt    |
+                  inst_sltu   |
+                  inst_nor    |
+                  inst_and    |
+                  inst_or     |
+                  inst_xor    |
+                  inst_st_w   |
+                  inst_beq    |
+                  inst_bne;
+
+assign rs1_conflict_es = need_rs1 && (rf_raddr1 != 5'd0) && es_valid_o && es_gr_we_o && (rf_raddr1 == es_dest_o);
+assign rs1_conflict_ms = need_rs1 && (rf_raddr1 != 5'd0) && ms_valid_o && ms_gr_we_o && (rf_raddr1 == ms_dest_o);
+assign rs1_conflict_ws = need_rs1 && (rf_raddr1 != 5'd0) && ws_valid_o && ws_gr_we_o && (rf_raddr1 == ws_dest_o);
+
+assign rs2_conflict_es = need_rs2 && (rf_raddr2 != 5'd0) && es_valid_o && es_gr_we_o && (rf_raddr2 == es_dest_o);
+assign rs2_conflict_ms = need_rs2 && (rf_raddr2 != 5'd0) && ms_valid_o && ms_gr_we_o && (rf_raddr2 == ms_dest_o);
+assign rs2_conflict_ws = need_rs2 && (rf_raddr2 != 5'd0) && ws_valid_o && ws_gr_we_o && (rf_raddr2 == ws_dest_o);
+
+assign raw_conflict = rs1_conflict_es | rs1_conflict_ms | rs1_conflict_ws |
+                      rs2_conflict_es | rs2_conflict_ms | rs2_conflict_ws;
+
+assign ds_ready_go = !raw_conflict;
 
 assign rj_value  = rf_rdata1;
 assign rkd_value = rf_rdata2;
@@ -258,7 +299,7 @@ assign br_taken = (   inst_beq  &&  rj_eq_rd
                    || inst_jirl
                    || inst_bl
                    || inst_b
-                  ) && ds_valid;
+                   ) && ds_valid && ds_ready_go;
 assign br_target = (inst_beq || inst_bne || inst_bl || inst_b) ? (ds_pc + br_offs) :
                                                    /*inst_jirl*/ (rj_value + jirl_offs);
 

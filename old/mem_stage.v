@@ -12,6 +12,10 @@ module mem_stage(
     //to ws
     output                         ms_to_ws_valid,
     output [`MS_TO_WS_BUS_WD -1:0] ms_to_ws_bus  ,
+    // hazard info to ds
+    output                         ms_valid_o    ,
+    output                         ms_gr_we_o    ,
+    output [4:0]                   ms_dest_o     ,
     //from data-sram
     input  [31                 :0] data_sram_rdata
 );
@@ -61,5 +65,9 @@ assign mem_result = data_sram_rdata;
 
 assign ms_final_result = ms_res_from_mem ? mem_result
                                          : ms_alu_result;
+
+assign ms_valid_o = ms_valid;
+assign ms_gr_we_o = ms_gr_we;
+assign ms_dest_o  = ms_dest;
 
 endmodule

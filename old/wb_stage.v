@@ -10,9 +10,13 @@ module wb_stage(
     input  [`MS_TO_WS_BUS_WD -1:0]  ms_to_ws_bus  ,
     //to rf: for write back
     output [`WS_TO_RF_BUS_WD -1:0]  ws_to_rf_bus  ,
+    // hazard info to ds
+    output                          ws_valid_o    ,
+    output                          ws_gr_we_o    ,
+    output [4:0]                    ws_dest_o     ,
     //trace debug interface
     output [31:0] debug_wb_pc     ,
-    output [ 3:0] debug_wb_rf_wen ,
+    output [ 3:0] debug_wb_rf_we  ,
     output [ 4:0] debug_wb_rf_wnum,
     output [31:0] debug_wb_rf_wdata
 );
@@ -54,13 +58,16 @@ always @(posedge clk) begin
     end
 end
 
-assign rf_we    = ws_gr_we&&ws_valid;
+assign rf_we    = ws_gr_we && ws_valid;
 assign rf_waddr = ws_dest;
 assign rf_wdata = ws_final_result;
 
-// debug info generate
+assign ws_valid_o = ws_valid;
+assign ws_gr_we_o = ws_gr_we;
+assign ws_dest_o  = ws_dest;
+
 assign debug_wb_pc       = ws_pc;
-assign debug_wb_rf_wen   = {4{rf_we}};
+assign debug_wb_rf_we    = {4{rf_we}};
 assign debug_wb_rf_wnum  = ws_dest;
 assign debug_wb_rf_wdata = ws_final_result;
 
